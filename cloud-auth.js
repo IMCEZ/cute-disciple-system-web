@@ -3,11 +3,7 @@
  * Only game saves are synchronized to the authenticated account. */
 (function () {
   var cfg = window.DZ_WEB_CONFIG || {};
-  if (!window.supabase || !cfg.supabaseUrl || !cfg.supabasePublishableKey) return;
-
-  var client = window.supabase.createClient(cfg.supabaseUrl, cfg.supabasePublishableKey, {
-    auth: { persistSession: true, detectSessionInUrl: true }
-  });
+  var client = null;
   var currentUser = null;
   var suppressWrite = false;
   var writeTimer = null;
@@ -149,13 +145,25 @@
     if (currentUser) { installSaveHook(); pullCloud(); }
   }
 
+  function startAuth() {
+    if (!window.supabase || !cfg.supabaseUrl || !cfg.supabasePublishableKey) {
+      setStatus('登录服务载入失败，请检查网络后刷新页面。', true);
+      setBusy(true);
+      return;
+    }
+    client = window.supabase.createClient(cfg.supabaseUrl, cfg.supabasePublishableKey, {
+      auth: { persistSession: true, detectSessionInUrl: true }
+    });
+    installSaveHook();
+    client.auth.getSession().then(function (r) {
+      var session = r.data && r.data.session;
+      setUser(session && session.user, session);
+    }).catch(function () { setUser(null, null); });
+    client.auth.onAuthStateChange(function (_event, session) {
+      setTimeout(function () { setUser(session && session.user, session); }, 0);
+    });
+  }
+
   ensureUi();
-  installSaveHook();
-  client.auth.getSession().then(function (r) {
-    var session = r.data && r.data.session;
-    setUser(session && session.user, session);
-  }).catch(function () { setUser(null, null); });
-  client.auth.onAuthStateChange(function (_event, session) {
-    setTimeout(function () { setUser(session && session.user, session); }, 0);
-  });
+  startAuth();
 })();
