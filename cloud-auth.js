@@ -76,6 +76,47 @@
     if (email) email.textContent = currentUser.email || '未提供邮箱';
     if (provider) provider.textContent = providerName(currentUser);
     if (input && document.activeElement !== input) input.value = displayName(currentUser);
+    refreshDeletionStatus();
+  }
+  function formatDeletionDeadline(value) {
+    try { return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)); } catch (_) { return String(value || ''); }
+  }
+  function refreshDeletionStatus() {
+    var el = document.getElementById('dz-profile-deletion');
+    if (!el || !currentUser || !client) return;
+    el.textContent = '正在检查注销状态…';
+    client.from('account_deletion_requests').select('delete_after').eq('user_id', currentUser.id).maybeSingle().then(function (r) {
+      if (!currentUser || !el) return;
+      if (r.error) { el.textContent = '注销状态暂时无法读取。'; return; }
+      el.textContent = r.data && r.data.delete_after ? ('已申请注销：将于 ' + formatDeletionDeadline(r.data.delete_after) + ' 后清除；重新登录即可撤销。') : '未申请注销。';
+      el.classList.toggle('pending', !!(r.data && r.data.delete_after));
+    }).catch(function () { if (el) el.textContent = '注销状态暂时无法读取。'; });
+  }
+  function cancelPendingDeletion() {
+    if (!currentUser || !client) return;
+    client.from('account_deletion_requests').delete().eq('user_id', currentUser.id).select('user_id').then(function (r) {
+      if (r.error) return;
+      if (r.data && r.data.length) toast('已重新登录，注销申请已自动撤销。');
+      refreshDeletionStatus();
+    }).catch(function () {});
+  }
+  function requestAccountDeletion() {
+    if (!currentUser || !client) return;
+    var message = '申请后会立即退出当前设备。若在 3 天内重新登录，申请会自动撤销；逾期后账号和全部云存档将永久删除。';
+    var confirm = typeof window.dzConfirm === 'function'
+      ? window.dzConfirm(message, { tone: 'danger', title: '申请注销账户', okText: '确认申请' })
+      : Promise.resolve(window.confirm(message));
+    confirm.then(function (ok) {
+      if (!ok || !currentUser) return;
+      var button = document.getElementById('dz-profile-cancel-account');
+      if (button) button.disabled = true;
+      client.from('account_deletion_requests').upsert({ user_id: currentUser.id }, { onConflict: 'user_id' }).then(function (r) {
+        if (button) button.disabled = false;
+        if (r.error) { setProfileStatus('注销申请失败：' + r.error.message, true); return; }
+        toast('注销申请已提交；3 天内重新登录即可撤销。');
+        signOutNow();
+      }).catch(function () { if (button) button.disabled = false; setProfileStatus('网络连接失败，请稍后重试。', true); });
+    });
   }
   function openAccount(required) {
     if (!currentUser) { if (gate()) gate().classList.remove('hidden'); return; }
@@ -128,12 +169,12 @@
       '.dz-auth-card,.dz-profile-card{position:relative;width:min(100%,452px);padding:34px 31px 27px;border:1px solid rgba(255,255,255,.86);border-radius:28px;background:rgba(255,255,255,.78);box-shadow:0 24px 74px rgba(50,102,170,.22),inset 0 1px 0 rgba(255,255,255,.96);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);text-align:center}.dz-auth-orbit{width:60px;height:60px;margin:0 auto 15px;border-radius:22px;background:linear-gradient(145deg,#dbeeff,#75a9f3);box-shadow:0 10px 26px rgba(70,130,215,.27);display:grid;place-items:center}.dz-auth-orbit i{width:23px;height:23px;border:3px solid #fff;border-radius:50%;box-shadow:0 0 0 5px rgba(255,255,255,.27);display:block}.dz-auth-kicker{font-size:11px;letter-spacing:.17em;color:#5c8ed9;font-weight:750;margin-bottom:7px}.dz-auth-card h1,.dz-profile-card h2{font-size:25px;letter-spacing:.04em;margin:0 0 10px;color:#26385f}.dz-auth-card p,.dz-profile-lead{font-size:13px;line-height:1.75;color:#647492;margin:0 auto 21px;max-width:335px}.dz-auth-form,.dz-profile-form{text-align:left}.dz-auth-label,.dz-profile-label{display:block;font-size:12px;color:#536786;font-weight:700;margin:0 0 7px}.dz-auth-card input,.dz-profile-card input{width:100%;border:1px solid #d4e1f5;border-radius:13px;padding:13px 14px;background:rgba(255,255,255,.88);font-size:14px;color:#26385f;outline:none;transition:.2s}.dz-auth-card input:focus,.dz-profile-card input:focus{border-color:#72a4ec;box-shadow:0 0 0 4px rgba(104,158,235,.16)}',
       '.dz-auth-card button,.dz-profile-card button{width:100%;min-height:46px;border:1px solid transparent;border-radius:13px;padding:11px 14px;margin-top:10px;cursor:pointer;font-size:14px;font-weight:750;letter-spacing:.02em;transition:transform .16s,box-shadow .16s,filter .16s}.dz-auth-card button:hover,.dz-profile-card button:hover{transform:translateY(-1px);filter:brightness(1.02)}.dz-auth-card button:disabled,.dz-profile-card button:disabled{cursor:wait;opacity:.66;transform:none}.dz-email-login,.dz-profile-save{background:linear-gradient(135deg,#5d91e9,#83b5fb);color:#fff;box-shadow:0 8px 18px rgba(72,130,220,.24)}.dz-discord-login,.dz-profile-secondary{background:rgba(255,255,255,.82);color:#3d4e78;border-color:#d6e2f5!important;box-shadow:0 5px 14px rgba(71,111,170,.08)}.dz-discord-login .discord-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;background:#5865f2;vertical-align:1px}.dz-auth-divider{display:flex;align-items:center;gap:10px;margin:16px 0 1px;color:#9aa9c0;font-size:11px}.dz-auth-divider:before,.dz-auth-divider:after{content:"";height:1px;flex:1;background:#dfe8f5}.dz-auth-card #dz-auth-status,.dz-profile-status{min-height:20px;margin-top:12px;font-size:12px;line-height:1.5;color:#3d896b}.dz-auth-card #dz-auth-status.bad,.dz-profile-status.bad{color:#c34c64}.dz-auth-note{margin:15px 0 0;color:#8797b1;font-size:11px;line-height:1.65}.dz-auth-note strong{color:#628de0;font-weight:700}',
       '#dz-cloud-account{position:fixed;top:max(12px,env(safe-area-inset-top));right:12px;z-index:530;display:flex;align-items:center;gap:8px;border:1px solid rgba(128,161,212,.25);border-radius:14px;background:rgba(255,255,255,.78);padding:7px 8px 7px 11px;box-shadow:0 4px 16px rgba(45,65,110,.11);backdrop-filter:blur(8px);font-size:11px;color:#53617b}#dz-cloud-account button{border:0;border-radius:8px;background:#eaf3ff;color:#4d7fd1;cursor:pointer;font-size:11px;font-weight:700;padding:5px 7px}#dz-cloud-toast{position:fixed;left:50%;bottom:86px;z-index:3300;transform:translate(-50%,16px);opacity:0;pointer-events:none;background:#253858;color:#fff;padding:10px 14px;border-radius:11px;font-size:12px;transition:.2s;box-shadow:0 7px 20px rgba(20,45,85,.18)}#dz-cloud-toast.show{transform:translate(-50%,0);opacity:1}',
-      '#dz-account-panel{position:fixed;inset:0;z-index:3200;display:none;place-items:center;padding:20px;background:rgba(30,52,92,.22);backdrop-filter:blur(8px)}#dz-account-panel.show{display:grid}.dz-profile-card{width:min(100%,410px);text-align:left}.dz-profile-head{display:flex;align-items:flex-start;gap:12px}.dz-profile-head h2{font-size:21px;flex:1}.dz-profile-close{border:0;background:#edf4ff;color:#6288ce;border-radius:10px;width:34px;height:34px;cursor:pointer;font-size:20px;line-height:1}.dz-profile-info{display:grid;gap:8px;padding:12px 0 18px;margin-bottom:18px;border-bottom:1px solid #e0eaf6}.dz-profile-info div{display:flex;justify-content:space-between;gap:14px;font-size:12px;color:#8291aa}.dz-profile-info strong{max-width:68%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#425779;font-weight:700}.dz-profile-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.dz-profile-actions button{margin:0}.dz-profile-logout{background:#fff1f3!important;color:#c65a70!important;border-color:#ffd8df!important}.dz-profile-foot{margin-top:15px;color:#8a9ab3;font-size:11px;line-height:1.6}',
+      '#dz-account-panel{position:fixed;inset:0;z-index:3200;display:none;place-items:center;padding:20px;background:rgba(30,52,92,.22);backdrop-filter:blur(8px)}#dz-account-panel.show{display:grid}.dz-profile-card{width:min(100%,410px);text-align:left}.dz-profile-head{display:flex;align-items:flex-start;gap:12px}.dz-profile-head h2{font-size:21px;flex:1}.dz-profile-close{border:0;background:#edf4ff;color:#6288ce;border-radius:10px;width:34px;height:34px;cursor:pointer;font-size:20px;line-height:1}.dz-profile-info{display:grid;gap:8px;padding:12px 0 18px;margin-bottom:18px;border-bottom:1px solid #e0eaf6}.dz-profile-info div{display:flex;justify-content:space-between;gap:14px;font-size:12px;color:#8291aa}.dz-profile-info strong{max-width:68%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#425779;font-weight:700}.dz-profile-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.dz-profile-actions button{margin:0}.dz-profile-logout,.dz-profile-cancel{background:#fff1f3!important;color:#c65a70!important;border-color:#ffd8df!important}.dz-profile-danger{margin-top:18px;padding-top:15px;border-top:1px solid #f3dce1}.dz-profile-danger h3{margin:0 0 4px;font-size:13px;color:#9b4558}.dz-profile-danger p,.dz-profile-deletion{margin:0;color:#8a9ab3;font-size:11px;line-height:1.6}.dz-profile-deletion{margin-top:8px}.dz-profile-deletion.pending{color:#b65b6c}.dz-profile-danger button{margin-top:10px}.dz-profile-foot{margin-top:15px;color:#8a9ab3;font-size:11px;line-height:1.6}',
       '@media(max-width:520px){#dz-auth-gate{align-items:end;padding:16px 16px max(26px,env(safe-area-inset-bottom))}.dz-auth-card,.dz-profile-card{padding:28px 22px 22px;border-radius:24px}.dz-auth-card h1{font-size:23px}#dz-cloud-account{top:8px;right:8px}.dz-profile-actions{grid-template-columns:1fr}}'
     ].join('');
     document.head.appendChild(style);
     var wrap = document.createElement('div');
-    wrap.innerHTML = '<section id="dz-auth-gate" aria-labelledby="dz-auth-title"><div class="dz-auth-card"><div class="dz-auth-orbit" aria-hidden="true"><i></i></div><div class="dz-auth-kicker">CUTE DISCIPLE SYSTEM · WEB</div><h1 id="dz-auth-title">把故事带回云端</h1><p>登录后即可同步你的剧情存档，在不同设备上继续与你的徒弟相遇。</p><div class="dz-auth-form"><label class="dz-auth-label" for="dz-auth-email">邮箱登录</label><input id="dz-auth-email" type="email" autocomplete="email" inputmode="email" placeholder="name@example.com"><button id="dz-email-login" class="dz-email-login" type="button">发送魔法登录链接</button><div class="dz-auth-divider">或</div><button id="dz-discord-login" class="dz-discord-login" type="button"><span class="discord-dot"></span>使用 Discord 继续</button><div id="dz-auth-status" role="status" aria-live="polite"></div></div><div class="dz-auth-note"><strong>只同步游戏存档。</strong> API Key 与本地个性化设置不会上传到云端。</div></div></section><div id="dz-cloud-account"><span id="dz-account-name">正在检查登录状态</span><button id="dz-account-button" type="button">登录</button></div><section id="dz-account-panel" aria-label="账户管理"><div class="dz-profile-card"><div class="dz-profile-head"><div><div class="dz-auth-kicker">ACCOUNT CENTER</div><h2>账户管理</h2></div><button id="dz-profile-close" class="dz-profile-close" type="button" aria-label="关闭">×</button></div><p class="dz-profile-lead">普通用户名仅用于本网页账户展示，可随时修改。</p><div class="dz-profile-info"><div><span>登录方式</span><strong id="dz-profile-provider"></strong></div><div><span>账号邮箱</span><strong id="dz-profile-email"></strong></div><div><span>云存档</span><strong>已启用</strong></div></div><div class="dz-profile-form"><label class="dz-profile-label" for="dz-profile-name">普通用户名</label><input id="dz-profile-name" type="text" maxlength="24" autocomplete="username" placeholder="输入 2-24 个字符"><div id="dz-profile-status" class="dz-profile-status" role="status" aria-live="polite"></div><button id="dz-profile-save" class="dz-profile-save" type="button">保存用户名</button></div><div class="dz-profile-actions"><button id="dz-profile-sync" class="dz-profile-secondary" type="button">立即同步存档</button><button id="dz-profile-logout" class="dz-profile-secondary dz-profile-logout" type="button">退出当前设备</button></div><div class="dz-profile-foot">退出仅清除本设备的登录状态，不会删除云端存档。</div></div></section><div id="dz-cloud-toast" role="status" aria-live="polite"></div>';
+    wrap.innerHTML = '<section id="dz-auth-gate" aria-labelledby="dz-auth-title"><div class="dz-auth-card"><div class="dz-auth-orbit" aria-hidden="true"><i></i></div><div class="dz-auth-kicker">CUTE DISCIPLE SYSTEM · WEB</div><h1 id="dz-auth-title">把故事带回云端</h1><p>登录后即可同步你的剧情存档，在不同设备上继续与你的徒弟相遇。</p><div class="dz-auth-form"><label class="dz-auth-label" for="dz-auth-email">邮箱登录</label><input id="dz-auth-email" type="email" autocomplete="email" inputmode="email" placeholder="name@example.com"><button id="dz-email-login" class="dz-email-login" type="button">发送魔法登录链接</button><div class="dz-auth-divider">或</div><button id="dz-discord-login" class="dz-discord-login" type="button"><span class="discord-dot"></span>使用 Discord 继续</button><div id="dz-auth-status" role="status" aria-live="polite"></div></div><div class="dz-auth-note"><strong>只同步游戏存档。</strong> API Key 与本地个性化设置不会上传到云端。</div></div></section><div id="dz-cloud-account"><span id="dz-account-name">正在检查登录状态</span><button id="dz-account-button" type="button">登录</button></div><section id="dz-account-panel" aria-label="账户管理"><div class="dz-profile-card"><div class="dz-profile-head"><div><div class="dz-auth-kicker">ACCOUNT CENTER</div><h2>账户管理</h2></div><button id="dz-profile-close" class="dz-profile-close" type="button" aria-label="关闭">×</button></div><p class="dz-profile-lead">普通用户名仅用于本网页账户展示，可随时修改。</p><div class="dz-profile-info"><div><span>登录方式</span><strong id="dz-profile-provider"></strong></div><div><span>账号邮箱</span><strong id="dz-profile-email"></strong></div><div><span>云存档</span><strong>已启用</strong></div></div><div class="dz-profile-form"><label class="dz-profile-label" for="dz-profile-name">普通用户名</label><input id="dz-profile-name" type="text" maxlength="24" autocomplete="username" placeholder="输入 2-24 个字符"><div id="dz-profile-status" class="dz-profile-status" role="status" aria-live="polite"></div><button id="dz-profile-save" class="dz-profile-save" type="button">保存用户名</button></div><div class="dz-profile-actions"><button id="dz-profile-sync" class="dz-profile-secondary" type="button">立即同步存档</button><button id="dz-profile-logout" class="dz-profile-secondary dz-profile-logout" type="button">退出当前设备</button></div><section class="dz-profile-danger"><h3>危险操作</h3><p>申请后会立即退出；在 3 天内重新登录即可撤销。逾期后账号和云存档将永久清除。</p><div id="dz-profile-deletion" class="dz-profile-deletion">正在检查注销状态…</div><button id="dz-profile-cancel-account" class="dz-profile-secondary dz-profile-cancel" type="button">申请注销账户</button></section><div class="dz-profile-foot">退出仅清除本设备的登录状态，不会删除云端存档。</div></div></section><div id="dz-cloud-toast" role="status" aria-live="polite"></div>';
     while (wrap.firstChild) document.body.appendChild(wrap.firstChild);
     document.getElementById('dz-email-login').onclick = function () {
       if (authBusy || !client) return;
@@ -157,6 +198,7 @@
     document.getElementById('dz-profile-save').onclick = saveProfile;
     document.getElementById('dz-profile-sync').onclick = function () { if (currentUser) { pushCloud(readLocal(), false); } };
     document.getElementById('dz-profile-logout').onclick = signOutNow;
+    document.getElementById('dz-profile-cancel-account').onclick = requestAccountDeletion;
   }
   function readLocal() { try { var raw = localStorage.getItem('dz_saves'); return raw ? JSON.parse(raw) : []; } catch (_) { return []; } }
   function writeLocal(data) { try { localStorage.setItem('dz_saves', JSON.stringify(Array.isArray(data) ? data : [])); return true; } catch (_) { return false; } }
@@ -265,7 +307,7 @@
     window.DZCloudAccessToken = (session && session.access_token) || '';
     renderAccount(); updateProfilePanel();
     if (currentUser) {
-      installSaveHook(); pullCloud();
+      installSaveHook(); pullCloud(); cancelPendingDeletion();
       if (!displayName(currentUser)) setTimeout(function () { openAccount(true); }, 180);
     }
   }
