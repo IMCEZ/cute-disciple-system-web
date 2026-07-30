@@ -2,6 +2,8 @@
 
 静态前端部署在 Vercel，Supabase 提供邮箱魔法链接、Discord OAuth、云端存档和受认证保护的 AI 请求代理。
 
+生产站点：<https://cute-disciple-system-web.vercel.app>
+
 ## 隐私边界
 
 游戏存档会按登录用户同步到 Supabase。AI 服务地址、模型和 API Key 仅保存在当前浏览器的本地存储，云端不会保存或记录它们。
