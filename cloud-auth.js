@@ -145,6 +145,54 @@
     if (currentUser) { installSaveHook(); pullCloud(); }
   }
 
+  function cleanAuthCallbackUrl() {
+    try {
+      var url = new URL(window.location.href);
+      ['code', 'error', 'error_code', 'error_description'].forEach(function (key) { url.searchParams.delete(key); });
+      window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : '') + (url.hash ? url.hash : ''));
+    } catch (_) {}
+  }
+  function restoreExistingSession() {
+    client.auth.getSession().then(function (r) {
+      var session = r.data && r.data.session;
+      setUser(session && session.user, session);
+    }).catch(function () {
+      setStatus('无法读取登录状态，请刷新后重试。', true);
+      setUser(null, null);
+    });
+  }
+  function finishOAuthCallback() {
+    var url;
+    try { url = new URL(window.location.href); } catch (_) { restoreExistingSession(); return; }
+    var code = url.searchParams.get('code');
+    var callbackError = url.searchParams.get('error_description') || url.searchParams.get('error');
+    if (callbackError) {
+      cleanAuthCallbackUrl();
+      setStatus('登录未完成：' + callbackError, true);
+      setUser(null, null);
+      return;
+    }
+    if (!code) { restoreExistingSession(); return; }
+    setBusy(true);
+    setStatus('正在完成登录…');
+    client.auth.exchangeCodeForSession(code).then(function (r) {
+      setBusy(false);
+      if (r.error || !r.data || !r.data.session) {
+        cleanAuthCallbackUrl();
+        setStatus('登录会话创建失败：' + ((r.error && r.error.message) || '请重新发起登录。'), true);
+        setUser(null, null);
+        return;
+      }
+      cleanAuthCallbackUrl();
+      setStatus('登录成功，正在载入你的存档…');
+      setUser(r.data.session.user, r.data.session);
+    }).catch(function () {
+      setBusy(false);
+      setStatus('登录会话创建失败，请重新发起登录。', true);
+      setUser(null, null);
+    });
+  }
+
   function startAuth() {
     if (!window.supabase || !cfg.supabaseUrl || !cfg.supabasePublishableKey) {
       setStatus('登录服务载入失败，请检查网络后刷新页面。', true);
@@ -152,13 +200,10 @@
       return;
     }
     client = window.supabase.createClient(cfg.supabaseUrl, cfg.supabasePublishableKey, {
-      auth: { persistSession: true, detectSessionInUrl: true }
+      auth: { persistSession: true, detectSessionInUrl: false, flowType: 'pkce' }
     });
     installSaveHook();
-    client.auth.getSession().then(function (r) {
-      var session = r.data && r.data.session;
-      setUser(session && session.user, session);
-    }).catch(function () { setUser(null, null); });
+    finishOAuthCallback();
     client.auth.onAuthStateChange(function (_event, session) {
       setTimeout(function () { setUser(session && session.user, session); }, 0);
     });
