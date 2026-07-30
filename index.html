@@ -41,9 +41,10 @@ html{height:100%}
 }
 #bg-layer::after{
   content:'';position:absolute;inset:0;
-  background:url('https://cdn.jsdelivr.net/gh/IMCEZ/cute-disciple-system-web@main/assets/story-bg.png') center/cover no-repeat;
+  background:none;
   opacity:0.42;
 }
+body.story-bg-ready #bg-layer::after{background:url('https://cdn.jsdelivr.net/gh/IMCEZ/cute-disciple-system-web@main/assets/story-bg.png') center/cover no-repeat}
 #bg-scrim{
   position:fixed;inset:0;z-index:-1;pointer-events:none;
   background:
@@ -5892,6 +5893,6 @@ document.addEventListener('DOMContentLoaded',function(){
 });
 </script>
 <script src="./web-bridge.js?v=20260730-2"></script>
-<script src="./cloud-auth.js?v=20260730-3"></script>
+<script src="./cloud-auth.js?v=20260730-4"></script>
 </body>
 </html>
