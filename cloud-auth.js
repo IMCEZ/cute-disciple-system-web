@@ -10,7 +10,15 @@
   var authBusy = false;
   var profileRequired = false;
   window.DZCloudAccessToken = '';
-  window.DZCloud = { get accessToken() { return Promise.resolve(''); }, get user() { return currentUser; }, client: null };
+  window.DZCloud = {
+    get accessToken() {
+      return client && currentUser
+        ? client.auth.getSession().then(function (r) { return (r.data.session && r.data.session.access_token) || ''; })
+        : Promise.resolve('');
+    },
+    get user() { return currentUser; },
+    client: null
+  };
 
   function displayName(user) {
     return user && user.user_metadata && String(user.user_metadata.display_name || '').trim() || '';
