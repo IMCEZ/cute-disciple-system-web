@@ -9,6 +9,9 @@
   var writeTimer = null;
   var authBusy = false;
   var profileRequired = false;
+  var cloudKnownSlots = {};
+  var cloudHashes = {};
+  var CLOUD_SLOT_LIMIT = 2;
   window.DZCloudAccessToken = '';
   window.DZCloud = {
     get accessToken() {
@@ -157,22 +160,100 @@
   }
   function readLocal() { try { var raw = localStorage.getItem('dz_saves'); return raw ? JSON.parse(raw) : []; } catch (_) { return []; } }
   function writeLocal(data) { try { localStorage.setItem('dz_saves', JSON.stringify(Array.isArray(data) ? data : [])); return true; } catch (_) { return false; } }
-  function pullCloud() {
-    if (!currentUser) return Promise.resolve();
+  function limitCloudSlots(saves) {
+    return (Array.isArray(saves) ? saves : []).slice().sort(function (a, b) { return (b.updated || 0) - (a.updated || 0); }).slice(0, CLOUD_SLOT_LIMIT);
+  }
+  function slotKey(save) { return 'slot:' + String(save && save.id || 'unknown'); }
+  function hashText(text) {
+    var h = 2166136261;
+    for (var i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return (h >>> 0).toString(36) + ':' + text.length;
+  }
+  function bytesToBase64(bytes) {
+    var out = '', step = 0x8000;
+    for (var i = 0; i < bytes.length; i += step) out += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
+    return btoa(out);
+  }
+  function base64ToBytes(value) {
+    var raw = atob(value), bytes = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    return bytes;
+  }
+  function packSave(text) {
+    if (!window.CompressionStream || !window.TextEncoder) return Promise.resolve({ encoding: 'json', payload: JSON.parse(text), payload_gzip: null });
+    try {
+      var stream = new CompressionStream('gzip');
+      var writer = stream.writable.getWriter();
+      writer.write(new TextEncoder().encode(text)); writer.close();
+      return new Response(stream.readable).arrayBuffer().then(function (buffer) {
+        var packed = bytesToBase64(new Uint8Array(buffer));
+        return packed.length < text.length ? { encoding: 'gzip-base64', payload: [], payload_gzip: packed } : { encoding: 'json', payload: JSON.parse(text), payload_gzip: null };
+      });
+    } catch (_) { return Promise.resolve({ encoding: 'json', payload: JSON.parse(text), payload_gzip: null }); }
+  }
+  function unpackSave(row) {
+    if (!row) return Promise.resolve(null);
+    if (row.encoding !== 'gzip-base64' || !row.payload_gzip || !window.DecompressionStream || !window.TextDecoder) return Promise.resolve(row.payload && typeof row.payload === 'object' ? row.payload : null);
+    try {
+      var stream = new DecompressionStream('gzip');
+      var writer = stream.writable.getWriter();
+      writer.write(base64ToBytes(row.payload_gzip)); writer.close();
+      return new Response(stream.readable).arrayBuffer().then(function (buffer) { return JSON.parse(new TextDecoder().decode(buffer)); });
+    } catch (_) { return Promise.resolve(null); }
+  }
+  function hydrateCloudRows(rows) {
+    return Promise.all((rows || []).map(function (row) {
+      return unpackSave(row).then(function (save) { return save && save.id ? { save: save, row: row } : null; }).catch(function () { return null; });
+    })).then(function (items) { return items.filter(Boolean); });
+  }
+  function pullLegacyCloud() {
     return client.from('web_game_saves').select('payload,updated_at').eq('slot_key', 'primary').maybeSingle().then(function (r) {
       if (r.error) { toast('云存档读取失败：' + r.error.message); return; }
-      var local = readLocal(), remote = r.data && r.data.payload;
-      if (Array.isArray(remote) && remote.length) { suppressWrite = true; writeLocal(remote); suppressWrite = false; toast('已载入云存档。'); }
-      else if (local.length) return pushCloud(local, true);
+      var legacy = r.data && r.data.payload;
+      if (Array.isArray(legacy) && legacy.length) {
+        var limited = limitCloudSlots(legacy);
+        suppressWrite = true; writeLocal(limited); suppressWrite = false;
+        toast('已载入旧版云存档，并将在下次保存时迁移。');
+        return pushCloud(limited, true);
+      }
+      var local = limitCloudSlots(readLocal());
+      if (local.length) return pushCloud(local, true);
+    });
+  }
+  function pullCloud() {
+    if (!currentUser) return Promise.resolve();
+    return client.from('web_game_saves').select('slot_key,payload,payload_gzip,encoding,content_hash,updated_at').neq('slot_key', 'primary').order('updated_at', { ascending: false }).then(function (r) {
+      if (r.error) { toast('云存档读取失败：' + r.error.message); return; }
+      if (!r.data || !r.data.length) return pullLegacyCloud();
+      return hydrateCloudRows(r.data).then(function (items) {
+        var saves = limitCloudSlots(items.map(function (item) { return item.save; }));
+        cloudKnownSlots = {}; cloudHashes = {};
+        items.forEach(function (item) { cloudKnownSlots[item.row.slot_key] = true; cloudHashes[item.row.slot_key] = item.row.content_hash || ''; });
+        if (saves.length) { suppressWrite = true; writeLocal(saves); suppressWrite = false; toast('已载入两份以内的云存档。'); }
+      });
     });
   }
   function pushCloud(saves, quiet) {
     if (!currentUser || suppressWrite) return Promise.resolve();
-    return client.from('web_game_saves').upsert({ user_id: currentUser.id, slot_key: 'primary', payload: Array.isArray(saves) ? saves : [], updated_at: new Date().toISOString() }, { onConflict: 'user_id,slot_key' }).then(function (r) {
-      if (r.error) toast('云存档保存失败：' + r.error.message); else if (!quiet) toast('云存档已同步。');
+    var list = limitCloudSlots(saves);
+    var wanted = {};
+    var jobs = list.map(function (save) {
+      var key = slotKey(save), text = JSON.stringify(save), hash = hashText(text);
+      wanted[key] = true;
+      if (cloudHashes[key] === hash) return Promise.resolve();
+      return packSave(text).then(function (packed) {
+        return client.from('web_game_saves').upsert({ user_id: currentUser.id, slot_key: key, payload: packed.payload, payload_gzip: packed.payload_gzip, encoding: packed.encoding, content_hash: hash, updated_at: new Date().toISOString() }, { onConflict: 'user_id,slot_key' }).then(function (r) {
+          if (r.error) throw r.error;
+          cloudKnownSlots[key] = true; cloudHashes[key] = hash;
+        });
+      });
     });
+    Object.keys(cloudKnownSlots).forEach(function (key) {
+      if (!wanted[key]) jobs.push(client.from('web_game_saves').delete().eq('slot_key', key).then(function () { delete cloudKnownSlots[key]; delete cloudHashes[key]; }));
+    });
+    return Promise.all(jobs).then(function () { if (!quiet) toast('已增量同步变化的存档。'); }).catch(function (error) { toast('云存档保存失败：' + (error && error.message || '请稍后重试。')); });
   }
-  function schedulePush(saves) { if (!currentUser || suppressWrite) return; clearTimeout(writeTimer); writeTimer = setTimeout(function () { pushCloud(saves, false); }, 900); }
+  function schedulePush(saves) { if (!currentUser || suppressWrite) return; clearTimeout(writeTimer); writeTimer = setTimeout(function () { pushCloud(saves, false); }, 2600); }
   function installSaveHook() {
     if (!window.writeSaves || window.writeSaves.__cloudWrapped) return;
     var original = window.writeSaves;

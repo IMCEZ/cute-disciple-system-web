@@ -2335,7 +2335,7 @@ function confirmRecruit(){
     lines.push('【原著库使用规则】若徒弟姓名与证据中的人物重合，必须以证据中的性格、关系和当前处境为底线，再融合用户指定的外貌、年龄与性格；不得改写已发生事件，也不得把未检索到的内容当成原著事实。');
   }
   // 新建存档槽 → 关收徒页 → 进主页 → 显示创建锁屏 → 启动
-  newSlot();
+  if(!newSlot())return;
   // 先写入状态，再构建首回合 system prompt；后续剧情也会以该字段持续锁定性别。
   STATE.disciple.gender=discipleGender;
   if(worldBibleSummary||canonSourceId){
@@ -4661,7 +4661,15 @@ window.onNativeAppForeground=function(){
 };
 document.addEventListener('visibilitychange',function(){if(document.hidden)markResumeCheckpoint();});
 /* 新建存档槽（开始新收徒时调用） */
-function newSlot(){CUR_SLOT='s'+Date.now()+Math.floor(Math.random()*1000);localStorage.setItem('dz_slot',CUR_SLOT);}
+function newSlot(){
+  if(loadSaves().length>=2){
+    dzAlert('每个账户最多保留两个存档。请先在「存档查看」中删除一个存档后再开始新的收徒。',{tone:'warn'});
+    return false;
+  }
+  CUR_SLOT='s'+Date.now()+Math.floor(Math.random()*1000);
+  localStorage.setItem('dz_slot',CUR_SLOT);
+  return true;
+}
 /* 载入指定存档到内存 */
 function loadSlot(id){
   var arr=loadSaves(),rec=arr.find(function(x){return x.id===id;});
@@ -5893,6 +5901,6 @@ document.addEventListener('DOMContentLoaded',function(){
 });
 </script>
 <script src="./web-bridge.js?v=20260730-2"></script>
-<script src="./cloud-auth.js?v=20260730-5"></script>
+<script src="./cloud-auth.js?v=20260730-6"></script>
 </body>
 </html>
