@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>预设管理</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --accent:#7b6cff;--accent-light:#9d8fff;
+  --accent-gradient:linear-gradient(135deg,#6c5ce7,#7b6cff);
+  --bg-0:#0e0e18;--bg-1:#14141f;--bg-card:#1e1e35;
+  --text-1:#e8e6f0;--text-2:#a8a4b8;--text-3:#6b6880;
+  --border:rgba(255,255,255,0.07);
+}
+body{
+  font-family:-apple-system,'PingFang SC','Helvetica Neue',sans-serif;
+  color:var(--text-1);background:var(--bg-0);height:100vh;display:flex;flex-direction:column;
+}
+/* 顶栏 */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-card);border-bottom:1px solid var(--border);flex-shrink:0}
+.topbar h2{font-size:16px;font-weight:600}
+.topbar .info{font-size:12px;color:var(--text-3)}
+/* 导入区 */
+.import-area{margin:12px 16px;padding:16px;border:2px dashed var(--text-3);border-radius:16px;text-align:center;cursor:pointer;transition:all .3s;flex-shrink:0}
+.import-area:hover{border-color:var(--accent);background:rgba(123,108,255,0.05)}
+.import-area.dragover{border-color:var(--accent-light);background:rgba(123,108,255,0.1)}
+.import-area .big-icon{font-size:32px;margin-bottom:8px}
+.import-area p{font-size:13px;color:var(--text-2)}
+.import-area .sub{font-size:11px;color:var(--text-3);margin-top:4px}
+/* 预设列表 */
+.preset-list{flex:1;overflow-y:auto;padding:0 16px 16px}
+.preset-card{background:var(--bg-card);border-radius:14px;border:1px solid var(--border);margin-bottom:10px;overflow:hidden}
+.preset-header{display:flex;align-items:center;gap:10px;padding:14px 16px;cursor:pointer;transition:background .2s}
+.preset-header:hover{background:rgba(123,108,255,0.06)}
+.preset-header .arrow{font-size:12px;color:var(--text-3);transition:transform .3s;width:16px;text-align:center}
+.preset-header .arrow.open{transform:rotate(90deg)}
+.preset-header .pname{font-size:14px;font-weight:600;flex:1;color:var(--text-1)}
+.preset-header .pmeta{font-size:11px;color:var(--text-3);margin-right:8px}
+.preset-header .pcount{font-size:11px;color:var(--accent-light);margin-right:8px}
+.preset-header .del-btn{font-size:16px;cursor:pointer;opacity:0.4;transition:opacity .2s;background:none;border:none;color:var(--text-2)}
+.preset-header .del-btn:hover{opacity:1;color:#f87171}
+/* 词条列表 */
+.entry-list{display:none;border-top:1px solid var(--border);background:rgba(0,0,0,0.15)}
+.entry-list.open{display:block}
+.entry-item{border-bottom:1px solid rgba(255,255,255,0.04)}
+.entry-item:last-child{border-bottom:none}
+.entry-title-row{display:flex;align-items:center;gap:8px;padding:10px 16px 10px 20px;cursor:pointer;transition:background .2s}
+.entry-title-row:hover{background:rgba(123,108,255,0.04)}
+.entry-title-row .e-arrow{font-size:10px;color:var(--text-3);transition:transform .3s;width:10px;text-align:center;flex-shrink:0}
+.entry-title-row .e-arrow.open{transform:rotate(90deg)}
+.entry-title-row .e-name{font-size:13px;flex:1;color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.entry-title-row .e-role{font-size:10px;padding:2px 6px;border-radius:6px;color:var(--text-3);background:rgba(255,255,255,0.05);flex-shrink:0}
+.entry-title-row .e-switch{flex-shrink:0;position:relative;width:36px;height:20px;cursor:pointer}
+.entry-title-row .e-switch input{display:none}
+.entry-title-row .e-switch .track{position:absolute;inset:0;background:rgba(255,255,255,0.12);border-radius:10px;transition:all .25s}
+.entry-title-row .e-switch .track::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#666;transition:all .25s}
+.entry-title-row .e-switch input:checked+.track{background:var(--accent)}
+.entry-title-row .e-switch input:checked+.track::after{transform:translateX(16px);background:#fff}
+/* marker 条目 */
+.entry-item.marker .entry-title-row{opacity:0.5;cursor:default}
+.entry-item.marker .entry-title-row:hover{background:transparent}
+.entry-item.marker .e-name{color:var(--text-3);font-style:italic}
+/* 编辑区 */
+.entry-edit{display:none;padding:0 16px 12px 30px;border-top:1px solid rgba(255,255,255,0.04);margin-top:0}
+.entry-edit.open{display:block}
+.entry-edit textarea{width:100%;min-height:80px;padding:10px;border-radius:10px;background:rgba(255,255,255,0.05);border:1px solid var(--border);color:var(--text-1);font-size:12px;line-height:1.6;font-family:inherit;resize:vertical;outline:none;transition:border-color .2s}
+.entry-edit textarea:focus{border-color:var(--accent)}
+.entry-edit .edit-actions{display:flex;gap:8px;margin-top:8px}
+.entry-edit .edit-actions button{flex:1;padding:7px;border-radius:10px;border:none;font-size:12px;font-weight:500;cursor:pointer;transition:all .2s}
+.entry-edit .edit-save{background:var(--accent-gradient);color:#fff}
+.entry-edit .edit-save:hover{opacity:0.9}
+.entry-edit .edit-cancel{background:rgba(255,255,255,0.06);color:var(--text-2)}
+.entry-edit .edit-cancel:hover{background:rgba(255,255,255,0.1)}
+/* 确认删除弹窗 */
+.confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;display:none;align-items:center;justify-content:center}
+.confirm-overlay.open{display:flex}
+.confirm-box{background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:340px;width:90%;text-align:center}
+.confirm-box h3{font-size:15px;margin-bottom:8px}
+.confirm-box p{font-size:13px;color:var(--text-2);margin-bottom:16px}
+.confirm-box .btn-row{display:flex;gap:10px}
+.confirm-box .btn-row button{flex:1;padding:9px;border-radius:10px;border:none;font-size:13px;cursor:pointer;transition:all .2s}
+.confirm-box .btn-confirm{background:#f87171;color:#fff}
+.confirm-box .btn-confirm:hover{opacity:0.9}
+.confirm-box .btn-cancel{background:rgba(255,255,255,0.06);color:var(--text-2)}
+.confirm-box .btn-cancel:hover{background:rgba(255,255,255,0.1)}
+/* Toast */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg-card);border:1px solid var(--accent);border-radius:12px;padding:10px 20px;font-size:13px;z-index:200;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+/* 空状态 */
+.empty-state{text-align:center;padding:60px 20px;color:var(--text-3)}
+.empty-state .big{font-size:48px;margin-bottom:12px}
+.empty-state p{font-size:14px;margin-bottom:6px}
+.empty-state .sub{font-size:12px}
+/* 反截断/反空回/反色色面板 */
+.safety-panel{margin:12px 16px;padding:14px;background:var(--bg-card);border-radius:14px;border:1px solid var(--border);flex-shrink:0}
+.safety-panel .s-title{font-size:13px;font-weight:600;color:var(--accent-light);margin-bottom:8px}
+.safety-panel .s-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;font-size:12px;color:var(--text-2)}
+.safety-panel .s-row .s-label{display:flex;align-items:center;gap:6px}
+.safety-panel .s-row .s-badge{font-size:10px;padding:2px 6px;border-radius:6px;background:rgba(123,108,255,0.15);color:var(--accent-light)}
+/* 滚动条 */
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:rgba(123,108,255,0.3);border-radius:2px}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h2>📦 预设管理</h2>
+  <span class="info" id="status-info">未加载预设</span>
+</div>
+
+<!-- 安全面板：反截断/反空回/反色色 -->
+<div class="safety-panel" id="safety-panel" style="display:none">
+  <div class="s-title">🛡️ 安全机制（基于预设参数）</div>
+  <div class="s-row"><span class="s-label">✂️ 反截断</span><span class="s-badge" id="s-trunc">就绪</span></div>
+  <div class="s-row"><span class="s-label">📭 反空回</span><span class="s-badge" id="s-empty">就绪</span></div>
+  <div class="s-row"><span class="s-label">🔞 反色色</span><span class="s-badge" id="s-nsfw">待配置</span></div>
+</div>
+
+<!-- 导入区 -->
+<div class="import-area" id="import-area" onclick="document.getElementById('file-input').click()">
+  <div class="big-icon">📄</div>
+  <p>点击选择预设 JSON 文件</p>
+  <p class="sub">支持 .json 格式，自动解析 prompts 词条</p>
+  <input type="file" id="file-input" accept=".json" style="display:none" onchange="handleFileImport(event)">
+</div>
+
+<!-- 预设列表 -->
+<div class="preset-list" id="preset-list">
+  <div class="empty-state" id="empty-state">
+    <div class="big">📦</div>
+    <p>暂无预设</p>
+    <p class="sub">点击上方区域导入预设 JSON 文件</p>
+  </div>
+</div>
+
+<!-- 确认删除弹窗 -->
+<div class="confirm-overlay" id="confirm-overlay">
+  <div class="confirm-box">
+    <h3>🗑️ 删除预设</h3>
+    <p id="confirm-text">确认删除该预设？此操作不可撤销。</p>
+    <div class="btn-row">
+      <button class="btn-confirm" onclick="confirmDelete()">确认删除</button>
+      <button class="btn-cancel" onclick="closeConfirm()">取消</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+/* ===== 状态管理 ===== */
+const STORAGE_KEY = 'dz_presets_data';
+let presets = [];
+let deleteTargetId = null;
+let backendAvailable = false;
+
+/* 双模式：尝试后端，不可用时用 localStorage */
+async function checkBackend() {
+  try {
+    const r = await fetch('/api/health');
+    const d = await r.json();
+    backendAvailable = true;
+    return true;
+  } catch (e) {
+    backendAvailable = false;
+    return false;
+  }
+}
+
+function loadFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) { presets = JSON.parse(raw); return true; }
+  } catch(e) {}
+  return false;
+}
+
+function saveToStorage() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(presets)); } catch(e) {}
+}
+
+/* ===== API 调用 ===== */
+async function apiImport(data) {
+  if (backendAvailable) {
+    const r = await fetch('/api/presets/import', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return await r.json();
+  } else {
+    // localStorage 模式：本地解析
+    const parsed = parsePresetLocal(data);
+    const preset = {
+      id: 'local_' + Date.now(),
+      name: parsed.name,
+      version: parsed.version,
+      entryCount: parsed.entries.length,
+      globalParams: parsed.globalParams,
+      entries: parsed.entries,
+      createdAt: new Date().toISOString()
+    };
+    presets.push(preset);
+    saveToStorage();
+    return { success: true, preset: preset };
+  }
+}
+
+function parsePresetLocal(data) {
+  const name = data.name || (data.prompts && data.prompts.length > 0 ? data.prompts.find(p => !p.marker && p.name)?.name || data.prompts[0].name : '未命名预设') || '未命名预设';
+  const version = (data.name || '').match(/V(\d+)/i);
+  const entries = (data.prompts || []).map((p, idx) => ({
+    id: p.identifier || ('entry_' + idx),
+    name: p.name || '未命名词条',
+    enabled: p.enabled !== false,
+    content: p.content || '',
+    role: p.role || 'system',
+    isMarker: !!(p.name && (p.name.startsWith('----') || p.name.startsWith('--') || p.marker === true)),
+    injectionPosition: p.injection_position || 0,
+    injectionDepth: p.injection_depth || 4,
+    injectionOrder: p.injection_order || 100,
+    systemPrompt: p.system_prompt || false,
+    forbidOverrides: p.forbid_overrides || false
+  }));
+  return {
+    name, version: version ? 'V' + version[1] : '',
+    globalParams: {
+      temperature: data.temperature ?? 1, frequency_penalty: data.frequency_penalty ?? 0,
+      presence_penalty: data.presence_penalty ?? 0, top_p: data.top_p ?? 0.88,
+      top_k: data.top_k ?? 40, repetition_penalty: data.repetition_penalty ?? 1,
+      max_context_unlocked: data.max_context_unlocked || false,
+      openai_max_context: data.openai_max_context || 2000000, openai_max_tokens: data.openai_max_tokens || 65535,
+      send_if_empty: data.send_if_empty || '', impersonation_prompt: data.impersonation_prompt || '',
+      continue_nudge_prompt: data.continue_nudge_prompt || '',
+      new_chat_prompt: data.new_chat_prompt || '', stream_openai: data.stream_openai !== false,
+      bias_preset_selected: data.bias_preset_selected || 'Default (none)',
+      wi_format: data.wi_format || '', scenario_format: data.scenario_format || '',
+      personality_format: data.personality_format || '', group_nudge_prompt: data.group_nudge_prompt || '',
+      names_behavior: data.names_behavior ?? 0, tool_reasoning_mode: data.tool_reasoning_mode || 'disabled'
+    },
+    entries: entries
+  };
+}
+
+async function apiUpdateEntry(presetId, entryId, update) {
+  if (backendAvailable) {
+    const r = await fetch('/api/presets/' + presetId + '/entries/' + entryId, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(update)
+    });
+    return await r.json();
+  } else {
+    const p = presets.find(x => x.id === presetId);
+    if (!p) return { success: false };
+    const e = p.entries.find(x => x.id === entryId);
+    if (!e) return { success: false };
+    if (update.content !== undefined) e.content = update.content;
+    if (update.enabled !== undefined) e.enabled = update.enabled;
+    saveToStorage();
+    return { success: true, entry: e };
+  }
+}
+
+async function apiDeletePreset(presetId) {
+  if (backendAvailable) {
+    const r = await fetch('/api/presets/' + presetId, { method: 'DELETE' });
+    return await r.json();
+  } else {
+    const idx = presets.findIndex(x => x.id === presetId);
+    if (idx === -1) return { success: false };
+    presets.splice(idx, 1);
+    saveToStorage();
+    return { success: true };
+  }
+}
+
+async function apiGetPresets() {
+  if (backendAvailable) {
+    const r = await fetch('/api/presets');
+    const d = await r.json();
+    return d.presets || [];
+  } else {
+    return presets.map(p => ({ id: p.id, name: p.name, version: p.version, entryCount: p.entryCount, createdAt: p.createdAt }));
+  }
+}
+
+async function apiGetPreset(id) {
+  if (backendAvailable) {
+    const r = await fetch('/api/presets/' + id);
+    const d = await r.json();
+    return d.data;
+  } else {
+    return presets.find(x => x.id === id);
+  }
+}
+
+/* ===== 文件导入 ===== */
+function handleFileImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  showToast('正在解析 ' + file.name + '...');
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.prompts || !Array.isArray(data.prompts) || data.prompts.length === 0) {
+        showToast('❌ 无效预设：缺少 prompts 数组');
+        return;
+      }
+      const result = await apiImport(data);
+      if (result.success) {
+        showToast('✅ 导入成功：' + (result.preset.name || '未命名') + '（' + result.preset.entryCount + ' 词条）');
+        await refreshList();
+        updateSafetyPanel();
+      } else {
+        showToast('❌ 导入失败：' + (result.errors || ['未知错误']).join(', '));
+      }
+    } catch (err) {
+      showToast('❌ JSON 解析失败：' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+/* ===== 渲染列表 ===== */
+async function refreshList() {
+  const list = document.getElementById('preset-list');
+  const empty = document.getElementById('empty-state');
+
+  // 更新状态信息
+  const info = document.getElementById('status-info');
+  let presetList;
+  try { presetList = await apiGetPresets(); } catch(e) { presetList = []; }
+
+  if (presetList.length === 0) {
+    empty.style.display = 'block';
+    list.innerHTML = '';
+    list.appendChild(empty);
+    info.textContent = '无预设';
+    document.getElementById('safety-panel').style.display = 'none';
+    return;
+  }
+
+  info.textContent = presetList.length + ' 个预设';
+  empty.style.display = 'none';
+
+  let html = '';
+  for (const p of presetList) {
+    const full = await apiGetPreset(p.id);
+    const entries = full ? full.entries : [];
+    const enabledCount = entries.filter(e => e.enabled).length;
+
+    html += '<div class="preset-card" data-id="' + p.id + '">' +
+      '<div class="preset-header" onclick="togglePreset(this)">' +
+        '<span class="arrow">▶</span>' +
+        '<span class="pname">' + esc(p.name) + '</span>' +
+        (p.version ? '<span class="pcount">' + esc(p.version) + '</span>' : '') +
+        '<span class="pmeta">' + p.entryCount + ' 词条 · ' + enabledCount + ' 启用</span>' +
+        '<button class="del-btn" onclick="event.stopPropagation();requestDelete(\'' + p.id + '\',\'' + esc(p.name) + '\')">🗑️</button>' +
+      '</div>' +
+      '<div class="entry-list">' +
+        renderEntries(p.id, entries) +
+      '</div>' +
+    '</div>';
+  }
+  list.innerHTML = html;
+}
+
+function renderEntries(presetId, entries) {
+  if (!entries || entries.length === 0) return '<div style="padding:16px;text-align:center;color:var(--text-3);font-size:12px">无可用的词条</div>';
+
+  return entries.map((e, idx) => {
+    const markerClass = e.isMarker ? ' marker' : '';
+    const markerNoSwitch = e.isMarker ? ' style="opacity:0;pointer-events:none"' : '';
+    const editId = 'edit-' + presetId + '-' + e.id;
+
+    return '<div class="entry-item' + markerClass + '" data-id="' + e.id + '">' +
+      '<div class="entry-title-row" onclick="toggleEntry(this,\'' + editId + '\')">' +
+        '<span class="e-arrow">▶</span>' +
+        '<span class="e-name" title="' + esc(e.name) + '">' + esc(e.name) + '</span>' +
+        '<span class="e-role">' + e.role + '</span>' +
+        '<div class="e-switch"' + markerNoSwitch + ' onclick="event.stopPropagation();toggleSwitch(event,\'' + presetId + '\',\'' + e.id + '\',this)">' +
+          '<input type="checkbox" ' + (e.enabled ? 'checked' : '') + '>' +
+          '<div class="track"></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="entry-edit" id="' + editId + '">' +
+        '<textarea id="edit-text-' + e.id + '" rows="4">' + esc(e.content || '') + '</textarea>' +
+        '<div class="edit-actions">' +
+          '<button class="edit-save" onclick="saveEntry(\'' + presetId + '\',\'' + e.id + '\')">💾 保存</button>' +
+          '<button class="edit-cancel" onclick="cancelEdit(\'' + editId + '\',\'' + e.id + '\',\'' + esc(e.content || '') + '\')">取消</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>').replace(/"/g,'"').replace(/'/g,'&#39;');
+}
+
+/* ===== 交互 ===== */
+function togglePreset(header) {
+  const arrow = header.querySelector('.arrow');
+  const list = header.nextElementSibling;
+  arrow.classList.toggle('open');
+  list.classList.toggle('open');
+}
+
+function toggleEntry(titleRow, editId) {
+  const arrow = titleRow.querySelector('.e-arrow');
+  const edit = document.getElementById(editId);
+  if (!edit) return;
+  arrow.classList.toggle('open');
+  edit.classList.toggle('open');
+}
+
+async function toggleSwitch(event, presetId, entryId, switchEl) {
+  event.stopPropagation();
+  const input = switchEl.querySelector('input');
+  const newVal = !input.checked;
+  input.checked = newVal;
+  const result = await apiUpdateEntry(presetId, entryId, { enabled: newVal });
+  if (!result.success) {
+    input.checked = !newVal;
+    showToast('❌ 开关更新失败');
+  } else {
+    await refreshList();
+  }
+}
+
+async function saveEntry(presetId, entryId) {
+  const textarea = document.getElementById('edit-text-' + entryId);
+  if (!textarea) return;
+  const content = textarea.value;
+  const result = await apiUpdateEntry(presetId, entryId, { content: content });
+  if (result.success) {
+    showToast('✅ 词条已更新');
+    // 关闭编辑区
+    const edit = textarea.closest('.entry-edit');
+    if (edit) { edit.classList.remove('open'); edit.parentElement.querySelector('.e-arrow').classList.remove('open'); }
+    await refreshList();
+  } else {
+    showToast('❌ 保存失败');
+  }
+}
+
+function cancelEdit(editId, entryId, originalContent) {
+  const edit = document.getElementById(editId);
+  if (edit) {
+    edit.classList.remove('open');
+    edit.parentElement.querySelector('.e-arrow').classList.remove('open');
+  }
+  const textarea = document.getElementById('edit-text-' + entryId);
+  if (textarea) textarea.value = originalContent;
+}
+
+let deleteResolve = null;
+function requestDelete(presetId, presetName) {
+  deleteTargetId = presetId;
+  document.getElementById('confirm-text').textContent = '确认删除「' + presetName + '」？此操作不可撤销，将删除全部 ' + '词条。';
+  document.getElementById('confirm-overlay').classList.add('open');
+}
+
+function closeConfirm() {
+  document.getElementById('confirm-overlay').classList.remove('open');
+  deleteTargetId = null;
+}
+
+async function confirmDelete() {
+  if (!deleteTargetId) return;
+  const result = await apiDeletePreset(deleteTargetId);
+  if (result.success) {
+    showToast('✅ 预设已删除');
+    closeConfirm();
+    await refreshList();
+    updateSafetyPanel();
+  } else {
+    showToast('❌ 删除失败');
+  }
+  deleteTargetId = null;
+}
+
+/* ===== 安全面板 ===== */
+function updateSafetyPanel() {
+  const panel = document.getElementById('safety-panel');
+
+  // 从预设中提取 continue_nudge_prompt / send_if_empty / 破限词条
+  let hasContinueNudge = false;
+  let hasSendIfEmpty = false;
+  let hasNSFWJailbreak = false;
+
+  for (const p of presets) {
+    if (p.globalParams) {
+      if (p.globalParams.continue_nudge_prompt) hasContinueNudge = true;
+      if (p.globalParams.send_if_empty) hasSendIfEmpty = true;
+    }
+    if (p.entries) {
+      for (const e of p.entries) {
+        if (e.enabled && (e.name.includes('破限') || e.name.includes('NSFW') || e.name.includes('色色') || e.name.includes('nsfw'))) {
+          hasNSFWJailbreak = true;
+        }
+      }
+    }
+  }
+
+  if (presets.length > 0) {
+    panel.style.display = 'block';
+    document.getElementById('s-trunc').textContent = hasContinueNudge ? '✅ 已配置' : '⚪ 默认';
+    document.getElementById('s-empty').textContent = hasSendIfEmpty ? '✅ 已配置' : '⚪ 默认';
+    document.getElementById('s-nsfw').textContent = hasNSFWJailbreak ? '⚠️ 检测到破限词条' : '✅ 安全';
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+/* ===== Toast ===== */
+let toastTimer = null;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+/* ===== 初始化 ===== */
+async function init() {
+  await checkBackend();
+  loadFromStorage();
+  await refreshList();
+  updateSafetyPanel();
+
+  // 支持拖拽导入
+  const area = document.getElementById('import-area');
+  area.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    this.classList.add('dragover');
+  });
+  area.addEventListener('dragleave', function() {
+    this.classList.remove('dragover');
+  });
+  area.addEventListener('drop', function(e) {
+    e.preventDefault();
+    this.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.endsWith('.json')) {
+      const reader = new FileReader();
+      reader.onload = async function(ev) {
+        try {
+          const data = JSON.parse(ev.target.result);
+          if (!data.prompts) { showToast('❌ 无效预设格式'); return; }
+          const result = await apiImport(data);
+          if (result.success) {
+            showToast('✅ 导入成功：' + (result.preset.name || '未命名'));
+            await refreshList();
+            updateSafetyPanel();
+          }
+        } catch(err) {
+          showToast('❌ 解析失败：' + err.message);
+        }
+      };
+      reader.readAsText(file);
+    } else {
+      showToast('❌ 仅支持 .json 文件');
+    }
+  });
+}
+
+init();
+</script>
+</body>
+</html>
